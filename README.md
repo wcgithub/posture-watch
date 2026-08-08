@@ -49,25 +49,10 @@ Either way, once loaded, calibrate separately on each device — it stores
 calibration locally in that browser, since your torso/camera angle differs
 by device and where you place it.
 
-## Frontal vs. profile camera view
-
-The app auto-detects whether your camera sees you face-on (frontal) or
-from the side (profile) and switches formulas accordingly — a small badge
-on the video (e.g. "Frontal" or "Profile (left)") always shows which one is
-active. Detection is based on landmark visibility: MediaPipe reports low
-confidence for whichever ear/shoulder is actually occluded, and a
-sustained (1.5s) visibility gap is treated as profile — momentarily
-turning your head on a frontal camera doesn't drop visibility nearly that
-much, so it stays classified as frontal.
-
-Each view has its own independent calibration (switching views, or
-forcing one in Settings → Camera view, doesn't erase the other's data), so
-moving the camera later doesn't require throwing away prior calibration.
-
 ## How detection works
 
-**Frontal**: two ratios, normalized by shoulder width or ear width so
-they're insensitive to how far you are from the camera:
+Each frame, the app measures two ratios, normalized by shoulder width or
+ear width so they're insensitive to how far you are from the camera:
 
 - **Head position**: the *vertical* drop from your nose to your shoulder
   midpoint (not full 2D distance). This shrinks as your head drops
@@ -77,14 +62,8 @@ they're insensitive to how far you are from the camera:
 - **Shoulder position**: shoulder width relative to ear width. This
   shrinks as shoulders round forward/inward.
 
-**Profile**: two ratios derived from the ear→shoulder vector on whichever
-side is visible, normalized by ear-to-nose distance (a stable head-size
-reference that doesn't need your hips in frame):
-
-- **Head position**: horizontal offset between ear and shoulder — the
-  classic "craniovertebral angle" forward-head signal.
-- **Shoulder position**: vertical offset between ear and shoulder —
-  captures collapsing/slumping distinct from horizontal craning.
+This assumes a frontal (face-on) camera — a side-mounted/profile setup
+isn't supported.
 
 Calibration records both ratios twice — once for your good posture and
 once for your bad posture (however *you* slouch or crane forward). Each
@@ -100,11 +79,8 @@ of time each metric was bad enough to alert.
 
 ## Settings
 
-- **Camera view** — Auto-detect (default), or force Frontal/Profile if you
-  want to lock the algorithm regardless of what the visibility heuristic
-  thinks.
-- **Calibrate good / bad posture** — two independent captures, stored per
-  camera view; redo either one any time without affecting the other.
+- **Calibrate good / bad posture** — two independent captures; redo either
+  one any time without affecting the other.
 - **Head / Shoulder sensitivity** — separate 0–100% sliders per metric,
   each set as how far from your good posture (toward your bad posture)
   triggers an alert. Lower = stricter/sooner, higher = more tolerant.
@@ -116,10 +92,15 @@ of time each metric was bad enough to alert.
   shows.
 - **Show skeleton overlay** — draws the tracked points for debugging/trust.
 - **Mirror video** — flips the preview so it behaves like a mirror.
-- **Show debug info** — a live panel with the detected view, per-side
-  visibility scores, raw metric values, calibration values, live scores,
-  and current thresholds; also draws a dashed yellow line on the video for
-  exactly which vector each mode's "head" measurement uses.
+- **Show debug info** — a live panel with raw metric values, calibrated
+  good/bad values, live scores, and current thresholds, each colored green
+  when on the good side of its threshold and red when bad enough to alert.
+  Also draws directly on the video: a dashed yellow line for the live head
+  measurement (nose to shoulder-midpoint), plus green "good" and red "bad"
+  reference marks reconstructed from your calibration — a horizontal tick
+  where your nose should sit for good/bad head position, and a horizontal
+  span showing the good/bad shoulder width — so you can see exactly how
+  your current pose compares to both calibration points at a glance.
 
 ## Pausing
 

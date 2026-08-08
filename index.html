@@ -21,7 +21,6 @@
     <div id="stage">
       <video id="video" autoplay playsinline muted></video>
       <canvas id="overlay"></canvas>
-      <div id="modeBadge">Detecting view…</div>
       <div id="statusBanner" class="hidden">
         <span id="statusText">STRAIGHTEN UP</span>
       </div>
@@ -47,12 +46,18 @@
 
     <div id="debugPanel" class="hidden">
       <div class="debugTitle">Debug info</div>
-      <div class="debugRow"><span>View</span><span id="dbgView">—</span></div>
-      <div class="debugRow"><span>Ear visibility (L / R)</span><span id="dbgEarVis">—</span></div>
-      <div class="debugRow"><span>Shoulder visibility (L / R)</span><span id="dbgShVis">—</span></div>
-      <div class="debugRow"><span>Head metric — raw / good / bad</span><span id="dbgHead">—</span></div>
-      <div class="debugRow"><span>Shoulder metric — raw / good / bad</span><span id="dbgShoulder">—</span></div>
-      <div class="debugRow"><span>Head / Shoulder score</span><span id="dbgScores">—</span></div>
+      <div class="debugRow">
+        <span>Head metric — raw / good / bad</span>
+        <span><span id="dbgHeadRaw">—</span> / <span id="dbgHeadGood" class="dbgGood">—</span> / <span id="dbgHeadBad" class="dbgBad">—</span></span>
+      </div>
+      <div class="debugRow">
+        <span>Shoulder metric — raw / good / bad</span>
+        <span><span id="dbgShoulderRaw">—</span> / <span id="dbgShoulderGood" class="dbgGood">—</span> / <span id="dbgShoulderBad" class="dbgBad">—</span></span>
+      </div>
+      <div class="debugRow">
+        <span>Head / Shoulder score</span>
+        <span><span id="dbgHeadScore">—</span> / <span id="dbgShoulderScore">—</span></span>
+      </div>
       <div class="debugRow"><span>Head / Shoulder threshold</span><span id="dbgThresholds">—</span></div>
     </div>
 
@@ -71,17 +76,6 @@
 
   <aside id="settingsPanel" class="hidden">
     <h2>Settings</h2>
-
-    <section>
-      <h3>Camera view</h3>
-      <select id="viewModeOverride">
-        <option value="auto">Auto-detect</option>
-        <option value="frontal">Force frontal</option>
-        <option value="profile">Force profile</option>
-      </select>
-      <p class="hint">Auto-detect switches between a frontal (face-on) and profile (side-on) formula based on which ear/shoulder the camera can actually see. Each view keeps its own separate calibration.</p>
-      <p id="viewModeStatus" class="hint"></p>
-    </section>
 
     <section>
       <h3>Calibration</h3>

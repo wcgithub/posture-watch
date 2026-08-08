@@ -163,20 +163,6 @@ main {
 
 #pausedOverlay.hidden { display: none; }
 
-#modeBadge {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  background: rgba(0, 0, 0, 0.55);
-  color: var(--text);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  padding: 0.25rem 0.55rem;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
 .spinner {
   width: 28px;
   height: 28px;
@@ -256,6 +242,9 @@ main {
 .debugRow span:first-child {
   color: var(--muted);
 }
+
+.dbgGood { color: var(--good); }
+.dbgBad { color: var(--bad); }
 
 #historyPanel {
   width: 100%;
@@ -404,16 +393,6 @@ main {
   color: var(--text);
   border-radius: 6px;
   padding: 0.2rem 0.4rem;
-}
-
-#settingsPanel select {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 0.4rem 0.5rem;
-  font-size: 0.9rem;
 }
 
 button {
