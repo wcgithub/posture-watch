@@ -13,17 +13,29 @@ const statusBanner = document.getElementById("statusBanner");
 const alertFlash = document.getElementById("alertFlash");
 const headBar = document.getElementById("headBar");
 const shoulderBar = document.getElementById("shoulderBar");
+const pauseToggle = document.getElementById("pauseToggle");
+const pausedOverlay = document.getElementById("pausedOverlay");
+
+const chartCanvas = document.getElementById("historyChart");
+const chartCtx = chartCanvas.getContext("2d");
 
 const settingsPanel = document.getElementById("settingsPanel");
 const settingsToggle = document.getElementById("settingsToggle");
 const closeSettings = document.getElementById("closeSettings");
-const calibrateBtn = document.getElementById("calibrateBtn");
-const calibrateStatus = document.getElementById("calibrateStatus");
-const sensitivityInput = document.getElementById("sensitivity");
+const calibrateGoodBtn = document.getElementById("calibrateGoodBtn");
+const calibrateBadBtn = document.getElementById("calibrateBadBtn");
+const calibrateGoodStatus = document.getElementById("calibrateGoodStatus");
+const calibrateBadStatus = document.getElementById("calibrateBadStatus");
+const calibrateMsg = document.getElementById("calibrateMsg");
+const headSensitivityInput = document.getElementById("headSensitivity");
+const shoulderSensitivityInput = document.getElementById("shoulderSensitivity");
+const headSensVal = document.getElementById("headSensVal");
+const shoulderSensVal = document.getElementById("shoulderSensVal");
 const soundToggle = document.getElementById("soundToggle");
 const volumeInput = document.getElementById("volume");
 const visualToggle = document.getElementById("visualToggle");
 const badHoldInput = document.getElementById("badHold");
+const historyWindowInput = document.getElementById("historyWindow");
 const skeletonToggle = document.getElementById("skeletonToggle");
 const mirrorToggle = document.getElementById("mirrorToggle");
 
@@ -42,21 +54,26 @@ const SKELETON_LINES = [
 ];
 
 // ---------- Settings (persisted) ----------
-const SETTINGS_KEY = "postureWatch.settings.v1";
-const CALIBRATION_KEY = "postureWatch.calibration.v1";
+const SETTINGS_KEY = "postureWatch.settings.v2";
+const CALIBRATION_KEY = "postureWatch.calibration.v2";
 
 const defaultSettings = {
-  sensitivity: 18,
+  headSensitivity: 40,
+  shoulderSensitivity: 40,
   sound: true,
   volume: 60,
   visual: true,
   badHoldSec: 1.5,
+  historyWindowSec: 60,
   skeleton: true,
   mirror: true,
 };
 
 let settings = { ...defaultSettings, ...loadJSON(SETTINGS_KEY, {}) };
-let calibration = loadJSON(CALIBRATION_KEY, null);
+let calibration = loadJSON(CALIBRATION_KEY, { good: null, bad: null });
+if (!calibration || typeof calibration !== "object") {
+  calibration = { good: null, bad: null };
+}
 
 function loadJSON(key, fallback) {
   try {
@@ -74,11 +91,15 @@ function saveCalibration() {
 }
 
 function applySettingsToUI() {
-  sensitivityInput.value = settings.sensitivity;
+  headSensitivityInput.value = settings.headSensitivity;
+  headSensVal.textContent = settings.headSensitivity;
+  shoulderSensitivityInput.value = settings.shoulderSensitivity;
+  shoulderSensVal.textContent = settings.shoulderSensitivity;
   soundToggle.checked = settings.sound;
   volumeInput.value = settings.volume;
   visualToggle.checked = settings.visual;
   badHoldInput.value = settings.badHoldSec;
+  historyWindowInput.value = settings.historyWindowSec;
   skeletonToggle.checked = settings.skeleton;
   mirrorToggle.checked = settings.mirror;
   video.classList.toggle("mirrored", settings.mirror);
@@ -86,12 +107,34 @@ function applySettingsToUI() {
 }
 applySettingsToUI();
 
+function refreshCalibrationUI() {
+  calibrateGoodStatus.textContent = calibration.good ? "Calibrated" : "Not set";
+  calibrateGoodStatus.classList.toggle("set", !!calibration.good);
+  calibrateBadStatus.textContent = calibration.bad ? "Calibrated" : "Not set";
+  calibrateBadStatus.classList.toggle("set", !!calibration.bad);
+
+  if (calibration.good && calibration.bad) {
+    calibrateMsg.textContent = "Both poses calibrated — alerts are active.";
+  } else if (calibration.good || calibration.bad) {
+    calibrateMsg.textContent = "Calibrate the other pose too to activate alerts.";
+  } else {
+    calibrateMsg.textContent = "Calibrate both poses to activate alerts.";
+  }
+}
+refreshCalibrationUI();
+
 // ---------- Settings panel wiring ----------
 settingsToggle.addEventListener("click", () => settingsPanel.classList.remove("hidden"));
 closeSettings.addEventListener("click", () => settingsPanel.classList.add("hidden"));
 
-sensitivityInput.addEventListener("input", () => {
-  settings.sensitivity = Number(sensitivityInput.value);
+headSensitivityInput.addEventListener("input", () => {
+  settings.headSensitivity = Number(headSensitivityInput.value);
+  headSensVal.textContent = settings.headSensitivity;
+  saveSettings();
+});
+shoulderSensitivityInput.addEventListener("input", () => {
+  settings.shoulderSensitivity = Number(shoulderSensitivityInput.value);
+  shoulderSensVal.textContent = settings.shoulderSensitivity;
   saveSettings();
 });
 soundToggle.addEventListener("change", () => {
@@ -114,6 +157,10 @@ badHoldInput.addEventListener("change", () => {
   settings.badHoldSec = Number(badHoldInput.value);
   saveSettings();
 });
+historyWindowInput.addEventListener("change", () => {
+  settings.historyWindowSec = Number(historyWindowInput.value);
+  saveSettings();
+});
 skeletonToggle.addEventListener("change", () => {
   settings.skeleton = skeletonToggle.checked;
   saveSettings();
@@ -123,6 +170,24 @@ mirrorToggle.addEventListener("change", () => {
   video.classList.toggle("mirrored", settings.mirror);
   overlay.classList.toggle("mirrored", settings.mirror);
   saveSettings();
+});
+
+// ---------- Pause ----------
+let paused = false;
+
+pauseToggle.addEventListener("click", () => {
+  paused = !paused;
+  pauseToggle.textContent = paused ? "▶ Resume" : "⏸ Pause";
+  pausedOverlay.classList.toggle("hidden", !paused);
+  if (paused) {
+    badSince = null;
+    goodSince = null;
+    if (isAlerting) {
+      isAlerting = false;
+      triggerAlertOff();
+    }
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+  }
 });
 
 // ---------- Audio alert ----------
@@ -209,6 +274,12 @@ function dist(a, b) {
 function mid(a, b) {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
+}
+function clampRange(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
 
 // Returns null if key landmarks aren't confidently visible
 function computeMetrics(landmarks) {
@@ -248,20 +319,29 @@ function smoothMetrics(m) {
 
 // ---------- Calibration ----------
 let calibrating = false;
+let lastMetrics = null;
 
-calibrateBtn.addEventListener("click", () => runCalibration());
+calibrateGoodBtn.addEventListener("click", () => runCalibration("good"));
+calibrateBadBtn.addEventListener("click", () => runCalibration("bad"));
 
-async function runCalibration() {
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function runCalibration(kind) {
   if (calibrating) return;
   calibrating = true;
-  calibrateBtn.disabled = true;
+  calibrateGoodBtn.disabled = true;
+  calibrateBadBtn.disabled = true;
+
+  const label = kind === "good" ? "good, upright" : "bad (slouched / head forward)";
 
   for (let s = 3; s > 0; s--) {
-    calibrateStatus.textContent = `Sit up straight... capturing in ${s}`;
-    await new Promise((r) => setTimeout(r, 1000));
+    calibrateMsg.textContent = `Get into your ${label} posture... capturing in ${s}`;
+    await sleep(1000);
   }
 
-  calibrateStatus.textContent = "Hold still...";
+  calibrateMsg.textContent = "Hold still...";
   const samples = [];
   const start = performance.now();
   while (performance.now() - start < 1200) {
@@ -270,56 +350,54 @@ async function runCalibration() {
   }
 
   if (samples.length === 0) {
-    calibrateStatus.textContent = "Couldn't see you clearly — try again with better lighting.";
-    calibrating = false;
-    calibrateBtn.disabled = false;
-    return;
+    calibrateMsg.textContent = "Couldn't see you clearly — try again with better lighting.";
+  } else {
+    const avg = (key) => samples.reduce((sum, s) => sum + s[key], 0) / samples.length;
+    calibration[kind] = {
+      headDropRatio: avg("headDropRatio"),
+      shoulderWidthRatio: avg("shoulderWidthRatio"),
+    };
+    saveCalibration();
+    refreshCalibrationUI();
   }
 
-  const avg = (key) => samples.reduce((sum, s) => sum + s[key], 0) / samples.length;
-  calibration = {
-    headDropRatio: avg("headDropRatio"),
-    shoulderWidthRatio: avg("shoulderWidthRatio"),
-  };
-  saveCalibration();
-
-  calibrateStatus.textContent = "Calibrated! Alerts are now active.";
   calibrating = false;
-  calibrateBtn.disabled = false;
-}
-
-if (calibration) {
-  calibrateStatus.textContent = "Using saved calibration from this browser.";
+  calibrateGoodBtn.disabled = false;
+  calibrateBadBtn.disabled = false;
 }
 
 // ---------- Posture evaluation ----------
-let lastMetrics = null;
 let badSince = null;
 let goodSince = null;
 let isAlerting = false;
 
-function evaluatePosture(m) {
-  if (!calibration) return { bad: false, headScore: 0.5, shoulderScore: 0.5 };
-
-  const thresh = settings.sensitivity / 100; // fraction of baseline allowed to shrink
-
-  // headDropRatio / shoulderWidthRatio shrink when posture worsens (head forward/down,
-  // shoulders rounding in). Score: 1 = as good as calibration or better, 0 = at/past threshold.
-  const headScore = clamp01(
-    (m.headDropRatio - calibration.headDropRatio * (1 - thresh)) /
-      (calibration.headDropRatio * thresh)
-  );
-  const shoulderScore = clamp01(
-    (m.shoulderWidthRatio - calibration.shoulderWidthRatio * (1 - thresh)) /
-      (calibration.shoulderWidthRatio * thresh)
-  );
-
-  const bad = headScore <= 0 || shoulderScore <= 0;
-  return { bad, headScore, shoulderScore };
+// value at calibration.good -> score 1, value at calibration.bad -> score 0, linear beyond
+function scoreFromCalibration(value, goodVal, badVal) {
+  if (goodVal === badVal) return 1;
+  return (value - badVal) / (goodVal - badVal);
 }
 
-function clamp01(v) {
-  return Math.max(0, Math.min(1, v));
+function evaluatePosture(m) {
+  if (!calibration.good || !calibration.bad) {
+    return { bad: false, headScore: 0.5, shoulderScore: 0.5, ready: false };
+  }
+
+  const headScore = scoreFromCalibration(
+    m.headDropRatio,
+    calibration.good.headDropRatio,
+    calibration.bad.headDropRatio
+  );
+  const shoulderScore = scoreFromCalibration(
+    m.shoulderWidthRatio,
+    calibration.good.shoulderWidthRatio,
+    calibration.bad.shoulderWidthRatio
+  );
+
+  const headThreshold = 1 - settings.headSensitivity / 100;
+  const shoulderThreshold = 1 - settings.shoulderSensitivity / 100;
+
+  const bad = headScore <= headThreshold || shoulderScore <= shoulderThreshold;
+  return { bad, headScore, shoulderScore, ready: true };
 }
 
 function updateBars(headScore, shoulderScore) {
@@ -327,7 +405,7 @@ function updateBars(headScore, shoulderScore) {
   setBar(shoulderBar, shoulderScore);
 }
 function setBar(el, score) {
-  el.style.width = `${Math.round(score * 100)}%`;
+  el.style.width = `${Math.round(clamp01(score) * 100)}%`;
   el.style.background =
     score > 0.5 ? "var(--good)" : score > 0 ? "#ffcc00" : "var(--bad)";
 }
@@ -365,7 +443,7 @@ function triggerAlertOff() {
   stopBeeping();
 }
 
-// ---------- Drawing ----------
+// ---------- Skeleton drawing ----------
 function drawSkeleton(landmarks) {
   ctx.clearRect(0, 0, overlay.width, overlay.height);
   if (!settings.skeleton) return;
@@ -390,9 +468,87 @@ function drawSkeleton(landmarks) {
   }
 }
 
+// ---------- History chart ----------
+const history = []; // { t, headScore, shoulderScore }
+const HISTORY_SAMPLE_INTERVAL_MS = 100;
+let lastHistorySampleT = 0;
+
+function recordHistory(t, headScore, shoulderScore) {
+  if (t - lastHistorySampleT < HISTORY_SAMPLE_INTERVAL_MS) return false;
+  lastHistorySampleT = t;
+  history.push({ t, headScore, shoulderScore });
+  const cutoff = t - settings.historyWindowSec * 1000 - 2000;
+  while (history.length && history[0].t < cutoff) history.shift();
+  return true;
+}
+
+function drawHistoryChart() {
+  const w = chartCanvas.width;
+  const h = chartCanvas.height;
+  chartCtx.clearRect(0, 0, w, h);
+
+  const now = performance.now();
+  const windowMs = settings.historyWindowSec * 1000;
+  const tMin = now - windowMs;
+  const yMin = -0.3;
+  const yMax = 1.3;
+
+  const yToPx = (score) => h - ((clampRange(score, yMin, yMax) - yMin) / (yMax - yMin)) * h;
+  const tToPx = (t) => ((t - tMin) / windowMs) * w;
+
+  chartCtx.strokeStyle = "rgba(255,255,255,0.08)";
+  chartCtx.lineWidth = 1;
+  [0, 1].forEach((gy) => {
+    const py = yToPx(gy);
+    chartCtx.beginPath();
+    chartCtx.moveTo(0, py);
+    chartCtx.lineTo(w, py);
+    chartCtx.stroke();
+  });
+
+  if (calibration.good && calibration.bad) {
+    drawDashedLine(yToPx(1 - settings.headSensitivity / 100), "#4da3ff");
+    drawDashedLine(yToPx(1 - settings.shoulderSensitivity / 100), "#c77dff");
+  }
+
+  drawSeries((p) => p.headScore, "#4da3ff");
+  drawSeries((p) => p.shoulderScore, "#c77dff");
+
+  function drawDashedLine(py, color) {
+    chartCtx.save();
+    chartCtx.strokeStyle = color;
+    chartCtx.globalAlpha = 0.5;
+    chartCtx.setLineDash([4, 4]);
+    chartCtx.beginPath();
+    chartCtx.moveTo(0, py);
+    chartCtx.lineTo(w, py);
+    chartCtx.stroke();
+    chartCtx.restore();
+  }
+
+  function drawSeries(getVal, color) {
+    chartCtx.strokeStyle = color;
+    chartCtx.lineWidth = 2;
+    chartCtx.beginPath();
+    let started = false;
+    for (const point of history) {
+      if (point.t < tMin) continue;
+      const x = tToPx(point.t);
+      const y = yToPx(getVal(point));
+      if (!started) {
+        chartCtx.moveTo(x, y);
+        started = true;
+      } else {
+        chartCtx.lineTo(x, y);
+      }
+    }
+    if (started) chartCtx.stroke();
+  }
+}
+
 // ---------- Main loop ----------
 function renderLoop() {
-  if (poseLandmarker && video.readyState >= 2) {
+  if (!paused && poseLandmarker && video.readyState >= 2) {
     const result = poseLandmarker.detectForVideo(video, performance.now());
     if (result.landmarks && result.landmarks.length > 0) {
       const landmarks = result.landmarks[0];
@@ -400,9 +556,13 @@ function renderLoop() {
       if (raw) {
         lastMetrics = raw;
         const m = smoothMetrics(raw);
-        const { bad, headScore, shoulderScore } = evaluatePosture(m);
-        updateBars(headScore, shoulderScore);
-        handleAlertState(bad);
+        const evalResult = evaluatePosture(m);
+        updateBars(evalResult.headScore, evalResult.shoulderScore);
+        handleAlertState(evalResult.bad);
+        if (evalResult.ready) {
+          const sampled = recordHistory(performance.now(), evalResult.headScore, evalResult.shoulderScore);
+          if (sampled) drawHistoryChart();
+        }
       }
       drawSkeleton(landmarks);
     } else {

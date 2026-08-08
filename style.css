@@ -35,6 +35,12 @@ header h1 {
   font-weight: 600;
 }
 
+.headerBtns {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 #settingsToggle {
   background: none;
   border: 1px solid var(--border);
@@ -42,6 +48,16 @@ header h1 {
   font-size: 1.2rem;
   border-radius: 8px;
   padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+
+.pauseBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.85rem;
+  border-radius: 8px;
+  padding: 0.4rem 0.8rem;
   cursor: pointer;
 }
 
@@ -132,6 +148,21 @@ main {
 
 #loading.hidden { display: none; }
 
+#pausedOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+#pausedOverlay.hidden { display: none; }
+
 .spinner {
   width: 28px;
   height: 28px;
@@ -177,6 +208,90 @@ main {
   width: 50%;
   background: var(--good);
   transition: width 0.15s ease, background 0.15s ease;
+}
+
+#historyPanel {
+  width: 100%;
+  max-width: 640px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem;
+}
+
+.chartHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.chartTitle {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.legend {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot.head { background: var(--accent); }
+.dot.shoulder { background: #c77dff; }
+
+#historyChart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.calibRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.calibRow button {
+  flex: 1;
+}
+
+.calibStatus {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.calibStatus.set {
+  color: var(--good);
+}
+
+.sliderLabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-top: 0.75rem;
+}
+
+.sliderLabel:first-of-type {
+  margin-top: 0;
 }
 
 #settingsPanel {

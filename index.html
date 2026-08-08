@@ -11,7 +11,10 @@
 
   <header>
     <h1>Posture Watch</h1>
-    <button id="settingsToggle" aria-label="Settings">⚙</button>
+    <div class="headerBtns">
+      <button id="pauseToggle" class="pauseBtn">⏸ Pause</button>
+      <button id="settingsToggle" aria-label="Settings">⚙</button>
+    </div>
   </header>
 
   <main>
@@ -20,6 +23,9 @@
       <canvas id="overlay"></canvas>
       <div id="statusBanner" class="hidden">
         <span id="statusText">STRAIGHTEN UP</span>
+      </div>
+      <div id="pausedOverlay" class="hidden">
+        <span>Paused</span>
       </div>
       <div id="loading">
         <div class="spinner"></div>
@@ -37,6 +43,17 @@
         <div class="bar"><div id="shoulderBar" class="fill"></div></div>
       </div>
     </div>
+
+    <div id="historyPanel">
+      <div class="chartHeader">
+        <span class="chartTitle">Posture over time</span>
+        <div class="legend">
+          <span class="legendItem"><i class="dot head"></i>Head</span>
+          <span class="legendItem"><i class="dot shoulder"></i>Shoulders</span>
+        </div>
+      </div>
+      <canvas id="historyChart" width="640" height="160"></canvas>
+    </div>
   </main>
 
   <aside id="settingsPanel" class="hidden">
@@ -44,15 +61,25 @@
 
     <section>
       <h3>Calibration</h3>
-      <p class="hint">Sit up straight, facing the camera normally, then calibrate. Do this once per spot you sit in.</p>
-      <button id="calibrateBtn">Calibrate posture</button>
-      <p id="calibrateStatus" class="hint"></p>
+      <p class="hint">Calibrate both poses once per spot you sit in: good posture is your baseline, bad posture is what triggers an alert.</p>
+      <div class="calibRow">
+        <button id="calibrateGoodBtn">Calibrate good posture</button>
+        <span id="calibrateGoodStatus" class="calibStatus">Not set</span>
+      </div>
+      <div class="calibRow">
+        <button id="calibrateBadBtn">Calibrate bad posture</button>
+        <span id="calibrateBadStatus" class="calibStatus">Not set</span>
+      </div>
+      <p id="calibrateMsg" class="hint"></p>
     </section>
 
     <section>
       <h3>Sensitivity</h3>
-      <input type="range" id="sensitivity" min="5" max="40" value="18" />
-      <p class="hint">Lower = alerts sooner (stricter). Higher = allows more slouch before alerting.</p>
+      <label class="sliderLabel">Head <span id="headSensVal">40</span>%</label>
+      <input type="range" id="headSensitivity" min="0" max="100" value="40" />
+      <label class="sliderLabel">Shoulders <span id="shoulderSensVal">40</span>%</label>
+      <input type="range" id="shoulderSensitivity" min="0" max="100" value="40" />
+      <p class="hint">Lower = alerts sooner, closer to your good posture. Higher = allows more drift toward your bad posture before alerting.</p>
     </section>
 
     <section>
@@ -66,6 +93,13 @@
       <h3>Timing</h3>
       <label class="toggleRow">Bad posture hold time (sec)
         <input type="number" id="badHold" min="0.5" max="10" step="0.5" value="1.5" />
+      </label>
+    </section>
+
+    <section>
+      <h3>History chart</h3>
+      <label class="toggleRow">Time window (sec)
+        <input type="number" id="historyWindow" min="10" max="180" step="5" value="60" />
       </label>
     </section>
 

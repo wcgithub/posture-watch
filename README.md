@@ -23,9 +23,10 @@ python3 -m http.server 8765
 ```
 
 Then open **http://localhost:8765** in Chrome or Safari, allow camera
-access, and click **Calibrate posture** in Settings while sitting up
-straight. Do this once per spot you typically sit in — it saves to that
-browser's local storage.
+access, and in Settings click **Calibrate good posture** (sit up straight)
+and **Calibrate bad posture** (slouch / crane your head forward like you
+normally would). Both are required before alerts activate. Do this once
+per spot you typically sit in — it saves to that browser's local storage.
 
 ## Using it on iPad / Android
 
@@ -59,18 +60,35 @@ camera):
 - **Shoulder position**: distance between your shoulders. This shrinks as
   shoulders round forward/inward.
 
-Calibration records these ratios while you sit well. During monitoring, if
-either ratio drops more than the sensitivity threshold below its
-calibrated value for longer than the "hold time" (to ignore brief
-movements), an alert fires. Both bars in the main view show live scores
-(green = good, yellow/red = drifting).
+Calibration records both ratios twice — once for your good posture and
+once for your bad posture (however *you* slouch or crane forward). Each
+metric is then scored on a 0–1 scale where 1 = matches your good
+calibration and 0 = matches your bad calibration, so the alert threshold
+is based on your own actual range of motion instead of a generic
+percentage. Both bars in the main view show live scores (green = good,
+yellow/red = drifting), and the **Posture over time** chart plots both
+scores continuously over a configurable time window, with dashed lines
+showing where each sensitivity threshold currently sits.
 
 ## Settings
 
-- **Sensitivity** — how much drift is tolerated before alerting.
+- **Calibrate good / bad posture** — two independent captures; redo either
+  one any time without affecting the other.
+- **Head / Shoulder sensitivity** — separate 0–100% sliders per metric,
+  each set as how far from your good posture (toward your bad posture)
+  triggers an alert. Lower = stricter/sooner, higher = more tolerant.
 - **Sound alert** — repeating beep while posture is bad, with volume.
 - **Visual alert** — red flashing border + banner while posture is bad.
 - **Bad posture hold time** — seconds of sustained bad posture before
   alerting (avoids false alarms from quick movements/turning your head).
+- **History chart time window** — how many past seconds the trend chart
+  shows.
 - **Show skeleton overlay** — draws the tracked points for debugging/trust.
 - **Mirror video** — flips the preview so it behaves like a mirror.
+
+## Pausing
+
+Click **⏸ Pause** (top right) to stop monitoring and silence any active
+alert — handy when you step away or want to move without triggering
+alerts. The camera stays on for a fast resume; click **▶ Resume** to pick
+back up.
