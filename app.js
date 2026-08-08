@@ -15,6 +15,16 @@ const headBar = document.getElementById("headBar");
 const shoulderBar = document.getElementById("shoulderBar");
 const pauseToggle = document.getElementById("pauseToggle");
 const pausedOverlay = document.getElementById("pausedOverlay");
+const modeBadge = document.getElementById("modeBadge");
+
+const debugPanel = document.getElementById("debugPanel");
+const dbgView = document.getElementById("dbgView");
+const dbgEarVis = document.getElementById("dbgEarVis");
+const dbgShVis = document.getElementById("dbgShVis");
+const dbgHead = document.getElementById("dbgHead");
+const dbgShoulder = document.getElementById("dbgShoulder");
+const dbgScores = document.getElementById("dbgScores");
+const dbgThresholds = document.getElementById("dbgThresholds");
 
 const chartCanvas = document.getElementById("historyChart");
 const chartCtx = chartCanvas.getContext("2d");
@@ -22,6 +32,8 @@ const chartCtx = chartCanvas.getContext("2d");
 const settingsPanel = document.getElementById("settingsPanel");
 const settingsToggle = document.getElementById("settingsToggle");
 const closeSettings = document.getElementById("closeSettings");
+const viewModeOverrideInput = document.getElementById("viewModeOverride");
+const viewModeStatus = document.getElementById("viewModeStatus");
 const calibrateGoodBtn = document.getElementById("calibrateGoodBtn");
 const calibrateBadBtn = document.getElementById("calibrateBadBtn");
 const calibrateGoodStatus = document.getElementById("calibrateGoodStatus");
@@ -38,6 +50,7 @@ const badHoldInput = document.getElementById("badHold");
 const historyWindowInput = document.getElementById("historyWindow");
 const skeletonToggle = document.getElementById("skeletonToggle");
 const mirrorToggle = document.getElementById("mirrorToggle");
+const debugInfoToggle = document.getElementById("debugInfoToggle");
 
 // ---------- Landmark indices (BlazePose) ----------
 const NOSE = 0;
@@ -54,10 +67,11 @@ const SKELETON_LINES = [
 ];
 
 // ---------- Settings (persisted) ----------
-const SETTINGS_KEY = "postureWatch.settings.v2";
-const CALIBRATION_KEY = "postureWatch.calibration.v2";
+const SETTINGS_KEY = "postureWatch.settings.v3";
+const CALIBRATION_KEY = "postureWatch.calibration.v3";
 
 const defaultSettings = {
+  viewModeOverride: "auto", // "auto" | "frontal" | "profile"
   headSensitivity: 40,
   shoulderSensitivity: 40,
   sound: true,
@@ -67,12 +81,13 @@ const defaultSettings = {
   historyWindowSec: 60,
   skeleton: true,
   mirror: true,
+  debugInfo: false,
 };
 
 let settings = { ...defaultSettings, ...loadJSON(SETTINGS_KEY, {}) };
-let calibration = loadJSON(CALIBRATION_KEY, { good: null, bad: null });
-if (!calibration || typeof calibration !== "object") {
-  calibration = { good: null, bad: null };
+let calibration = loadJSON(CALIBRATION_KEY, null);
+if (!calibration || typeof calibration !== "object" || !calibration.frontal) {
+  calibration = { frontal: { good: null, bad: null }, profile: { good: null, bad: null } };
 }
 
 function loadJSON(key, fallback) {
@@ -90,7 +105,12 @@ function saveCalibration() {
   localStorage.setItem(CALIBRATION_KEY, JSON.stringify(calibration));
 }
 
+// Tracks which formula (frontal vs. profile) is currently active; declared
+// early since UI setup below reads it before the view-detection loop runs.
+let currentView = { view: "frontal", side: null, raw: null };
+
 function applySettingsToUI() {
+  viewModeOverrideInput.value = settings.viewModeOverride;
   headSensitivityInput.value = settings.headSensitivity;
   headSensVal.textContent = settings.headSensitivity;
   shoulderSensitivityInput.value = settings.shoulderSensitivity;
@@ -102,24 +122,40 @@ function applySettingsToUI() {
   historyWindowInput.value = settings.historyWindowSec;
   skeletonToggle.checked = settings.skeleton;
   mirrorToggle.checked = settings.mirror;
+  debugInfoToggle.checked = settings.debugInfo;
+  debugPanel.classList.toggle("hidden", !settings.debugInfo);
   video.classList.toggle("mirrored", settings.mirror);
   overlay.classList.toggle("mirrored", settings.mirror);
 }
 applySettingsToUI();
 
-function refreshCalibrationUI() {
-  calibrateGoodStatus.textContent = calibration.good ? "Calibrated" : "Not set";
-  calibrateGoodStatus.classList.toggle("set", !!calibration.good);
-  calibrateBadStatus.textContent = calibration.bad ? "Calibrated" : "Not set";
-  calibrateBadStatus.classList.toggle("set", !!calibration.bad);
+function modeLabel(mode, side) {
+  if (mode === "profile") return `Profile (${side || "…"})`;
+  return "Frontal";
+}
 
-  if (calibration.good && calibration.bad) {
-    calibrateMsg.textContent = "Both poses calibrated — alerts are active.";
-  } else if (calibration.good || calibration.bad) {
-    calibrateMsg.textContent = "Calibrate the other pose too to activate alerts.";
+function refreshCalibrationUI() {
+  const mode = currentView.view;
+  const cal = calibration[mode];
+  const label = modeLabel(mode, currentView.side);
+
+  calibrateGoodBtn.textContent = `Calibrate good posture (${label})`;
+  calibrateBadBtn.textContent = `Calibrate bad posture (${label})`;
+  calibrateGoodStatus.textContent = cal.good ? "Calibrated" : "Not set";
+  calibrateGoodStatus.classList.toggle("set", !!cal.good);
+  calibrateBadStatus.textContent = cal.bad ? "Calibrated" : "Not set";
+  calibrateBadStatus.classList.toggle("set", !!cal.bad);
+
+  if (cal.good && cal.bad) {
+    calibrateMsg.textContent = `Both poses calibrated for ${label} — alerts are active.`;
+  } else if (cal.good || cal.bad) {
+    calibrateMsg.textContent = `Calibrate the other ${label} pose too to activate alerts.`;
   } else {
-    calibrateMsg.textContent = "Calibrate both poses to activate alerts.";
+    calibrateMsg.textContent = `Calibrate both ${label} poses to activate alerts.`;
   }
+
+  viewModeStatus.textContent = `Currently detected: ${label}`;
+  modeBadge.textContent = label;
 }
 refreshCalibrationUI();
 
@@ -127,6 +163,10 @@ refreshCalibrationUI();
 settingsToggle.addEventListener("click", () => settingsPanel.classList.remove("hidden"));
 closeSettings.addEventListener("click", () => settingsPanel.classList.add("hidden"));
 
+viewModeOverrideInput.addEventListener("change", () => {
+  settings.viewModeOverride = viewModeOverrideInput.value;
+  saveSettings();
+});
 headSensitivityInput.addEventListener("input", () => {
   settings.headSensitivity = Number(headSensitivityInput.value);
   headSensVal.textContent = settings.headSensitivity;
@@ -171,6 +211,11 @@ mirrorToggle.addEventListener("change", () => {
   overlay.classList.toggle("mirrored", settings.mirror);
   saveSettings();
 });
+debugInfoToggle.addEventListener("change", () => {
+  settings.debugInfo = debugInfoToggle.checked;
+  debugPanel.classList.toggle("hidden", !settings.debugInfo);
+  saveSettings();
+});
 
 // ---------- Pause ----------
 let paused = false;
@@ -180,15 +225,19 @@ pauseToggle.addEventListener("click", () => {
   pauseToggle.textContent = paused ? "▶ Resume" : "⏸ Pause";
   pausedOverlay.classList.toggle("hidden", !paused);
   if (paused) {
-    badSince = null;
-    goodSince = null;
-    if (isAlerting) {
-      isAlerting = false;
-      triggerAlertOff();
-    }
+    resetAlertTiming();
     ctx.clearRect(0, 0, overlay.width, overlay.height);
   }
 });
+
+function resetAlertTiming() {
+  badSince = null;
+  goodSince = null;
+  if (isAlerting) {
+    isAlerting = false;
+    triggerAlertOff();
+  }
+}
 
 // ---------- Audio alert ----------
 let audioCtx = null;
@@ -267,7 +316,7 @@ async function setupPoseLandmarker() {
   });
 }
 
-// ---------- Metrics ----------
+// ---------- Helpers ----------
 function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -280,9 +329,77 @@ function clamp01(v) {
 function clampRange(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
+function vis(p) {
+  return p.visibility !== undefined ? p.visibility : 1;
+}
 
-// Returns null if key landmarks aren't confidently visible
-function computeMetrics(landmarks) {
+// ---------- View detection (frontal vs. profile) ----------
+// A profile view means one whole side (ear + shoulder) is occluded — its
+// landmarks come back with low confidence even though MediaPipe still
+// guesses a position for them. A big visibility gap between left and right
+// is the signal; a plain "turned my head" on a frontal camera doesn't drop
+// visibility nearly this much, it's momentary and both sides stay visible.
+function detectRawView(landmarks) {
+  const lEarVis = vis(landmarks[LEFT_EAR]);
+  const rEarVis = vis(landmarks[RIGHT_EAR]);
+  const lShVis = vis(landmarks[LEFT_SHOULDER]);
+  const rShVis = vis(landmarks[RIGHT_SHOULDER]);
+  const leftVis = (lEarVis + lShVis) / 2;
+  const rightVis = (rEarVis + rShVis) / 2;
+  const minVis = Math.min(leftVis, rightVis);
+  const maxVis = Math.max(leftVis, rightVis);
+  const isProfile = minVis < 0.5 && maxVis - minVis > 0.3;
+
+  return {
+    view: isProfile ? "profile" : "frontal",
+    side: isProfile ? (leftVis > rightVis ? "left" : "right") : null,
+    lEarVis,
+    rEarVis,
+    lShVis,
+    rShVis,
+  };
+}
+
+const VIEW_SWITCH_HOLD_MS = 1500; // sustained disagreement required before switching modes
+let viewModeStable = "frontal";
+let viewModeSide = null;
+let pendingView = null;
+let pendingSince = 0;
+
+function updateViewMode(landmarks) {
+  const raw = detectRawView(landmarks);
+
+  if (settings.viewModeOverride !== "auto") {
+    viewModeStable = settings.viewModeOverride;
+    if (raw.side) viewModeSide = raw.side;
+    currentView = { view: viewModeStable, side: viewModeStable === "profile" ? viewModeSide || "left" : null, raw };
+    return currentView;
+  }
+
+  if (raw.view !== viewModeStable) {
+    if (pendingView !== raw.view) {
+      pendingView = raw.view;
+      pendingSince = performance.now();
+    } else if (performance.now() - pendingSince >= VIEW_SWITCH_HOLD_MS) {
+      viewModeStable = raw.view;
+      pendingView = null;
+    }
+  } else {
+    pendingView = null;
+  }
+
+  if (raw.view === "profile") viewModeSide = raw.side;
+  currentView = { view: viewModeStable, side: viewModeStable === "profile" ? viewModeSide : null, raw };
+  return currentView;
+}
+
+// ---------- Metrics ----------
+// Frontal: head metric is the *vertical* drop from nose to shoulder-midpoint
+// (not full 2D distance) normalized by shoulder width. Turning your head
+// left/right shifts the nose sideways, not down, and shoulder width barely
+// changes with head-only yaw — so this stays stable through head turns
+// while still catching genuine forward/down craning.
+function computeFrontalMetrics(landmarks) {
   const nose = landmarks[NOSE];
   const lEar = landmarks[LEFT_EAR];
   const rEar = landmarks[RIGHT_EAR];
@@ -291,28 +408,62 @@ function computeMetrics(landmarks) {
 
   const minVis = 0.4;
   for (const p of [nose, lEar, rEar, lSh, rSh]) {
-    if (!p || (p.visibility !== undefined && p.visibility < minVis)) return null;
+    if (!p || vis(p) < minVis) return null;
   }
 
   const earWidth = dist(lEar, rEar) || 0.0001;
+  const shoulderWidth = dist(lSh, rSh) || 0.0001;
   const shoulderMid = mid(lSh, rSh);
-  const shoulderWidth = dist(lSh, rSh);
 
   return {
-    headDropRatio: dist(nose, shoulderMid) / earWidth,
-    shoulderWidthRatio: shoulderWidth / earWidth,
+    head: (shoulderMid.y - nose.y) / shoulderWidth,
+    shoulder: shoulderWidth / earWidth,
   };
 }
 
-// Exponential smoothing of live metrics to reduce jitter
+// Profile: uses whichever side is actually visible. Both metrics come from
+// the ear→shoulder vector, split into its two axes — horizontal offset
+// (how far the ear has crept forward of the shoulder, the classic
+// craniovertebral-angle signal) and vertical offset (how much the head has
+// dropped toward the shoulder, i.e. collapsing/slumping). Normalized by
+// ear-to-nose distance, a small but stable head-size reference that doesn't
+// require the hips to be in frame.
+function computeProfileMetrics(landmarks, side) {
+  const ear = landmarks[side === "left" ? LEFT_EAR : RIGHT_EAR];
+  const shoulder = landmarks[side === "left" ? LEFT_SHOULDER : RIGHT_SHOULDER];
+  const nose = landmarks[NOSE];
+
+  const minVis = 0.35;
+  for (const p of [ear, shoulder, nose]) {
+    if (!p || vis(p) < minVis) return null;
+  }
+
+  const scaleRef = dist(ear, nose) || 0.0001;
+
+  return {
+    head: (ear.x - shoulder.x) / scaleRef,
+    shoulder: (shoulder.y - ear.y) / scaleRef,
+  };
+}
+
+// Returns null if key landmarks aren't confidently visible for the given view
+function computeMetrics(landmarks, mode, side) {
+  return mode === "profile" ? computeProfileMetrics(landmarks, side) : computeFrontalMetrics(landmarks);
+}
+
+// Exponential smoothing of live metrics to reduce jitter. Hard-resets
+// (instead of blending) whenever the view mode changes, since frontal and
+// profile metrics are on entirely different scales.
 let smoothed = null;
+let smoothedMode = null;
 const SMOOTHING = 0.35;
-function smoothMetrics(m) {
-  if (!smoothed) {
+function smoothMetrics(m, mode) {
+  if (!smoothed || smoothedMode !== mode) {
     smoothed = { ...m };
+    smoothedMode = mode;
   } else {
-    smoothed.headDropRatio += (m.headDropRatio - smoothed.headDropRatio) * SMOOTHING;
-    smoothed.shoulderWidthRatio += (m.shoulderWidthRatio - smoothed.shoulderWidthRatio) * SMOOTHING;
+    smoothed.head += (m.head - smoothed.head) * SMOOTHING;
+    smoothed.shoulder += (m.shoulder - smoothed.shoulder) * SMOOTHING;
   }
   return smoothed;
 }
@@ -320,6 +471,7 @@ function smoothMetrics(m) {
 // ---------- Calibration ----------
 let calibrating = false;
 let lastMetrics = null;
+let lastMetricsMode = null;
 
 calibrateGoodBtn.addEventListener("click", () => runCalibration("good"));
 calibrateBadBtn.addEventListener("click", () => runCalibration("bad"));
@@ -334,10 +486,12 @@ async function runCalibration(kind) {
   calibrateGoodBtn.disabled = true;
   calibrateBadBtn.disabled = true;
 
+  const mode = currentView.view;
   const label = kind === "good" ? "good, upright" : "bad (slouched / head forward)";
+  const viewText = modeLabel(mode, currentView.side);
 
   for (let s = 3; s > 0; s--) {
-    calibrateMsg.textContent = `Get into your ${label} posture... capturing in ${s}`;
+    calibrateMsg.textContent = `Get into your ${label} posture (${viewText})... capturing in ${s}`;
     await sleep(1000);
   }
 
@@ -345,7 +499,7 @@ async function runCalibration(kind) {
   const samples = [];
   const start = performance.now();
   while (performance.now() - start < 1200) {
-    if (lastMetrics) samples.push(lastMetrics);
+    if (lastMetrics && lastMetricsMode === mode) samples.push(lastMetrics);
     await new Promise((r) => requestAnimationFrame(r));
   }
 
@@ -353,9 +507,9 @@ async function runCalibration(kind) {
     calibrateMsg.textContent = "Couldn't see you clearly — try again with better lighting.";
   } else {
     const avg = (key) => samples.reduce((sum, s) => sum + s[key], 0) / samples.length;
-    calibration[kind] = {
-      headDropRatio: avg("headDropRatio"),
-      shoulderWidthRatio: avg("shoulderWidthRatio"),
+    calibration[mode][kind] = {
+      head: avg("head"),
+      shoulder: avg("shoulder"),
     };
     saveCalibration();
     refreshCalibrationUI();
@@ -377,21 +531,14 @@ function scoreFromCalibration(value, goodVal, badVal) {
   return (value - badVal) / (goodVal - badVal);
 }
 
-function evaluatePosture(m) {
-  if (!calibration.good || !calibration.bad) {
+function evaluatePosture(m, mode) {
+  const cal = calibration[mode];
+  if (!cal.good || !cal.bad) {
     return { bad: false, headScore: 0.5, shoulderScore: 0.5, ready: false };
   }
 
-  const headScore = scoreFromCalibration(
-    m.headDropRatio,
-    calibration.good.headDropRatio,
-    calibration.bad.headDropRatio
-  );
-  const shoulderScore = scoreFromCalibration(
-    m.shoulderWidthRatio,
-    calibration.good.shoulderWidthRatio,
-    calibration.bad.shoulderWidthRatio
-  );
+  const headScore = scoreFromCalibration(m.head, cal.good.head, cal.bad.head);
+  const shoulderScore = scoreFromCalibration(m.shoulder, cal.good.shoulder, cal.bad.shoulder);
 
   const headThreshold = 1 - settings.headSensitivity / 100;
   const shoulderThreshold = 1 - settings.shoulderSensitivity / 100;
@@ -443,28 +590,78 @@ function triggerAlertOff() {
   stopBeeping();
 }
 
+// ---------- Debug panel ----------
+function fmt(v) {
+  return v === null || v === undefined || Number.isNaN(v) ? "—" : v.toFixed(3);
+}
+
+function updateDebugPanel(viewInfo, raw, evalResult) {
+  const mode = viewInfo.view;
+  const cal = calibration[mode];
+  dbgView.textContent = modeLabel(mode, viewInfo.side);
+  dbgEarVis.textContent = `${fmt(viewInfo.raw.lEarVis)} / ${fmt(viewInfo.raw.rEarVis)}`;
+  dbgShVis.textContent = `${fmt(viewInfo.raw.lShVis)} / ${fmt(viewInfo.raw.rShVis)}`;
+  dbgHead.textContent = `${fmt(raw && raw.head)} / ${fmt(cal.good && cal.good.head)} / ${fmt(cal.bad && cal.bad.head)}`;
+  dbgShoulder.textContent = `${fmt(raw && raw.shoulder)} / ${fmt(cal.good && cal.good.shoulder)} / ${fmt(cal.bad && cal.bad.shoulder)}`;
+  dbgScores.textContent = `${fmt(evalResult.headScore)} / ${fmt(evalResult.shoulderScore)}`;
+  dbgThresholds.textContent = `${fmt(1 - settings.headSensitivity / 100)} / ${fmt(1 - settings.shoulderSensitivity / 100)}`;
+}
+
 // ---------- Skeleton drawing ----------
-function drawSkeleton(landmarks) {
+function drawSkeleton(landmarks, viewInfo) {
   ctx.clearRect(0, 0, overlay.width, overlay.height);
   if (!settings.skeleton) return;
 
-  ctx.strokeStyle = isAlerting ? "#ff453a" : "#34c759";
+  const strokeColor = isAlerting ? "#ff453a" : "#34c759";
   ctx.lineWidth = 3;
   ctx.fillStyle = "#4da3ff";
 
-  for (const [a, b] of SKELETON_LINES) {
-    const pa = landmarks[a];
-    const pb = landmarks[b];
+  function drawLine(aIdx, bIdx) {
+    const pa = landmarks[aIdx];
+    const pb = landmarks[bIdx];
     ctx.beginPath();
     ctx.moveTo(pa.x * overlay.width, pa.y * overlay.height);
     ctx.lineTo(pb.x * overlay.width, pb.y * overlay.height);
     ctx.stroke();
   }
-  for (const i of SKELETON_POINTS) {
-    const p = landmarks[i];
+  function drawPoints(idxs) {
+    for (const i of idxs) {
+      const p = landmarks[i];
+      ctx.beginPath();
+      ctx.arc(p.x * overlay.width, p.y * overlay.height, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  function drawMeasurement(pa, pb) {
+    ctx.save();
+    ctx.strokeStyle = "#ffcc00";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
     ctx.beginPath();
-    ctx.arc(p.x * overlay.width, p.y * overlay.height, 5, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(pa.x * overlay.width, pa.y * overlay.height);
+    ctx.lineTo(pb.x * overlay.width, pb.y * overlay.height);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.strokeStyle = strokeColor;
+
+  if (viewInfo.view === "profile") {
+    const side = viewInfo.side || "left";
+    const earIdx = side === "left" ? LEFT_EAR : RIGHT_EAR;
+    const shIdx = side === "left" ? LEFT_SHOULDER : RIGHT_SHOULDER;
+    drawLine(NOSE, earIdx);
+    drawLine(earIdx, shIdx);
+    drawPoints([NOSE, earIdx, shIdx]);
+    if (settings.debugInfo) drawMeasurement(landmarks[earIdx], landmarks[shIdx]);
+  } else {
+    for (const [a, b] of SKELETON_LINES) drawLine(a, b);
+    drawPoints(SKELETON_POINTS);
+    if (settings.debugInfo) {
+      const lSh = landmarks[LEFT_SHOULDER];
+      const rSh = landmarks[RIGHT_SHOULDER];
+      drawMeasurement(landmarks[NOSE], mid(lSh, rSh));
+    }
   }
 }
 
@@ -519,7 +716,9 @@ function drawHistoryChart() {
     chartCtx.stroke();
   });
 
-  const haveCalibration = !!(calibration.good && calibration.bad);
+  const mode = currentView.view;
+  const cal = calibration[mode];
+  const haveCalibration = !!(cal.good && cal.bad);
   const headThreshold = 1 - settings.headSensitivity / 100;
   const shoulderThreshold = 1 - settings.shoulderSensitivity / 100;
 
@@ -603,16 +802,30 @@ function drawHistoryChart() {
 }
 
 // ---------- Main loop ----------
+let lastKnownMode = null;
+let lastKnownSide = null;
+
 function renderLoop() {
   if (!paused && poseLandmarker && video.readyState >= 2) {
     const result = poseLandmarker.detectForVideo(video, performance.now());
     if (result.landmarks && result.landmarks.length > 0) {
       const landmarks = result.landmarks[0];
-      const raw = computeMetrics(landmarks);
+      const viewInfo = updateViewMode(landmarks);
+
+      if (viewInfo.view !== lastKnownMode || viewInfo.side !== lastKnownSide) {
+        lastKnownMode = viewInfo.view;
+        lastKnownSide = viewInfo.side;
+        resetAlertTiming();
+        refreshCalibrationUI();
+      }
+
+      const raw = computeMetrics(landmarks, viewInfo.view, viewInfo.side);
+      let evalResult = { bad: false, headScore: 0.5, shoulderScore: 0.5, ready: false };
       if (raw) {
         lastMetrics = raw;
-        const m = smoothMetrics(raw);
-        const evalResult = evaluatePosture(m);
+        lastMetricsMode = viewInfo.view;
+        const m = smoothMetrics(raw, viewInfo.view);
+        evalResult = evaluatePosture(m, viewInfo.view);
         updateBars(evalResult.headScore, evalResult.shoulderScore);
         handleAlertState(evalResult.bad);
         if (evalResult.ready) {
@@ -620,7 +833,8 @@ function renderLoop() {
           if (sampled) drawHistoryChart();
         }
       }
-      drawSkeleton(landmarks);
+      drawSkeleton(landmarks, viewInfo);
+      if (settings.debugInfo) updateDebugPanel(viewInfo, raw, evalResult);
     } else {
       ctx.clearRect(0, 0, overlay.width, overlay.height);
     }

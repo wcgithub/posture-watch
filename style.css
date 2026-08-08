@@ -163,6 +163,20 @@ main {
 
 #pausedOverlay.hidden { display: none; }
 
+#modeBadge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
 .spinner {
   width: 28px;
   height: 28px;
@@ -208,6 +222,39 @@ main {
   width: 50%;
   background: var(--good);
   transition: width 0.15s ease, background 0.15s ease;
+}
+
+#debugPanel {
+  width: 100%;
+  max-width: 640px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+#debugPanel.hidden { display: none; }
+
+.debugTitle {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+
+.debugRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.75rem;
+  padding: 0.15rem 0;
+  color: var(--text);
+}
+
+.debugRow span:first-child {
+  color: var(--muted);
 }
 
 #historyPanel {
@@ -357,6 +404,16 @@ main {
   color: var(--text);
   border-radius: 6px;
   padding: 0.2rem 0.4rem;
+}
+
+#settingsPanel select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.9rem;
 }
 
 button {
