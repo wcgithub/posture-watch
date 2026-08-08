@@ -482,10 +482,23 @@ function recordHistory(t, headScore, shoulderScore) {
   return true;
 }
 
+// Layout: line plot on top, two "bad enough to alert" indicator strips below
+const CHART_PLOT_H = 128;
+const CHART_STRIP_H = 14;
+const CHART_STRIP_GAP = 6;
+const CHART_HEAD_STRIP_Y = CHART_PLOT_H + CHART_STRIP_GAP;
+const CHART_SHOULDER_STRIP_Y = CHART_HEAD_STRIP_Y + CHART_STRIP_H + 4;
+
+function hexToRgba(hex, alpha) {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
 function drawHistoryChart() {
   const w = chartCanvas.width;
-  const h = chartCanvas.height;
-  chartCtx.clearRect(0, 0, w, h);
+  const totalH = chartCanvas.height;
+  const plotH = CHART_PLOT_H;
+  chartCtx.clearRect(0, 0, w, totalH);
 
   const now = performance.now();
   const windowMs = settings.historyWindowSec * 1000;
@@ -493,7 +506,7 @@ function drawHistoryChart() {
   const yMin = -0.3;
   const yMax = 1.3;
 
-  const yToPx = (score) => h - ((clampRange(score, yMin, yMax) - yMin) / (yMax - yMin)) * h;
+  const yToPx = (score) => plotH - ((clampRange(score, yMin, yMax) - yMin) / (yMax - yMin)) * plotH;
   const tToPx = (t) => ((t - tMin) / windowMs) * w;
 
   chartCtx.strokeStyle = "rgba(255,255,255,0.08)";
@@ -506,13 +519,22 @@ function drawHistoryChart() {
     chartCtx.stroke();
   });
 
-  if (calibration.good && calibration.bad) {
-    drawDashedLine(yToPx(1 - settings.headSensitivity / 100), "#4da3ff");
-    drawDashedLine(yToPx(1 - settings.shoulderSensitivity / 100), "#c77dff");
+  const haveCalibration = !!(calibration.good && calibration.bad);
+  const headThreshold = 1 - settings.headSensitivity / 100;
+  const shoulderThreshold = 1 - settings.shoulderSensitivity / 100;
+
+  if (haveCalibration) {
+    drawDashedLine(yToPx(headThreshold), "#4da3ff");
+    drawDashedLine(yToPx(shoulderThreshold), "#c77dff");
   }
 
   drawSeries((p) => p.headScore, "#4da3ff");
   drawSeries((p) => p.shoulderScore, "#c77dff");
+
+  if (haveCalibration) {
+    drawBadStrip(CHART_HEAD_STRIP_Y, (p) => p.headScore <= headThreshold, "#4da3ff", "Head");
+    drawBadStrip(CHART_SHOULDER_STRIP_Y, (p) => p.shoulderScore <= shoulderThreshold, "#c77dff", "Shoulders");
+  }
 
   function drawDashedLine(py, color) {
     chartCtx.save();
@@ -543,6 +565,40 @@ function drawHistoryChart() {
       }
     }
     if (started) chartCtx.stroke();
+  }
+
+  // Fills the strip with a faint baseline tint, then solid red across any
+  // stretch of history where isBad(point) held true — a timeline of exactly
+  // when that metric was bad enough to alert.
+  function drawBadStrip(y, isBad, color, label) {
+    chartCtx.fillStyle = hexToRgba(color, 0.12);
+    chartCtx.fillRect(0, y, w, CHART_STRIP_H);
+
+    chartCtx.fillStyle = "#ff453a";
+    let segStartX = null;
+    let lastX = null;
+    for (const point of history) {
+      if (point.t < tMin) continue;
+      const x = tToPx(point.t);
+      const bad = isBad(point);
+      if (bad && segStartX === null) segStartX = x;
+      if (!bad && segStartX !== null) {
+        chartCtx.fillRect(segStartX, y, Math.max(1, x - segStartX), CHART_STRIP_H);
+        segStartX = null;
+      }
+      lastX = x;
+    }
+    if (segStartX !== null && lastX !== null) {
+      chartCtx.fillRect(segStartX, y, Math.max(1, lastX - segStartX), CHART_STRIP_H);
+    }
+
+    chartCtx.strokeStyle = "rgba(255,255,255,0.15)";
+    chartCtx.lineWidth = 1;
+    chartCtx.strokeRect(0.5, y + 0.5, w - 1, CHART_STRIP_H - 1);
+
+    chartCtx.fillStyle = "rgba(255,255,255,0.6)";
+    chartCtx.font = "9px -apple-system, BlinkMacSystemFont, sans-serif";
+    chartCtx.fillText(label, 4, y + CHART_STRIP_H - 3);
   }
 }
 

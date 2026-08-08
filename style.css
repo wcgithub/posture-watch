@@ -253,6 +253,7 @@ main {
 
 .dot.head { background: var(--accent); }
 .dot.shoulder { background: #c77dff; }
+.dot.bad { background: var(--bad); }
 
 #historyChart {
   width: 100%;

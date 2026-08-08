@@ -68,7 +68,9 @@ is based on your own actual range of motion instead of a generic
 percentage. Both bars in the main view show live scores (green = good,
 yellow/red = drifting), and the **Posture over time** chart plots both
 scores continuously over a configurable time window, with dashed lines
-showing where each sensitivity threshold currently sits.
+showing where each sensitivity threshold currently sits. Below the lines,
+two labeled strips (Head / Shoulders) fill in red for exactly the stretches
+of time each metric was bad enough to alert.
 
 ## Settings
 
