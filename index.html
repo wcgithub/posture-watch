@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Posture Watch</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="alertFlash"></div>
+
+  <header>
+    <h1>Posture Watch</h1>
+    <button id="settingsToggle" aria-label="Settings">⚙</button>
+  </header>
+
+  <main>
+    <div id="stage">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="statusBanner" class="hidden">
+        <span id="statusText">STRAIGHTEN UP</span>
+      </div>
+      <div id="loading">
+        <div class="spinner"></div>
+        <p id="loadingText">Loading pose model…</p>
+      </div>
+    </div>
+
+    <div id="metrics">
+      <div class="metricRow">
+        <span class="metricLabel">Head position</span>
+        <div class="bar"><div id="headBar" class="fill"></div></div>
+      </div>
+      <div class="metricRow">
+        <span class="metricLabel">Shoulder position</span>
+        <div class="bar"><div id="shoulderBar" class="fill"></div></div>
+      </div>
+    </div>
+  </main>
+
+  <aside id="settingsPanel" class="hidden">
+    <h2>Settings</h2>
+
+    <section>
+      <h3>Calibration</h3>
+      <p class="hint">Sit up straight, facing the camera normally, then calibrate. Do this once per spot you sit in.</p>
+      <button id="calibrateBtn">Calibrate posture</button>
+      <p id="calibrateStatus" class="hint"></p>
+    </section>
+
+    <section>
+      <h3>Sensitivity</h3>
+      <input type="range" id="sensitivity" min="5" max="40" value="18" />
+      <p class="hint">Lower = alerts sooner (stricter). Higher = allows more slouch before alerting.</p>
+    </section>
+
+    <section>
+      <h3>Alerts</h3>
+      <label class="toggleRow"><input type="checkbox" id="soundToggle" checked /> Sound alert</label>
+      <input type="range" id="volume" min="0" max="100" value="60" />
+      <label class="toggleRow"><input type="checkbox" id="visualToggle" checked /> Visual alert (flash + banner)</label>
+    </section>
+
+    <section>
+      <h3>Timing</h3>
+      <label class="toggleRow">Bad posture hold time (sec)
+        <input type="number" id="badHold" min="0.5" max="10" step="0.5" value="1.5" />
+      </label>
+    </section>
+
+    <section>
+      <h3>Debug</h3>
+      <label class="toggleRow"><input type="checkbox" id="skeletonToggle" checked /> Show skeleton overlay</label>
+      <label class="toggleRow"><input type="checkbox" id="mirrorToggle" checked /> Mirror video</label>
+    </section>
+
+    <button id="closeSettings">Done</button>
+  </aside>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
