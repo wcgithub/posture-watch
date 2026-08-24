@@ -9,6 +9,7 @@
   --bad: #ff453a;
   --accent: #4da3ff;
   --border: #2a2e37;
+  --header-h: 60px;
 }
 
 html, body {
@@ -22,11 +23,15 @@ html, body {
 }
 
 header {
+  position: relative;
+  z-index: 1001;
+  min-height: var(--header-h);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
 }
 
 header h1 {
@@ -289,6 +294,7 @@ main {
 
 .dot.head { background: var(--accent); }
 .dot.shoulder { background: #c77dff; }
+.dot.fabric { background: #ff9f0a; }
 .dot.bad { background: var(--bad); }
 
 #historyChart {
@@ -331,14 +337,21 @@ main {
   margin-top: 0;
 }
 
+.sliderLabelText {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 #settingsPanel {
   position: fixed;
-  top: 0;
+  top: var(--header-h);
   right: 0;
   bottom: 0;
   width: min(340px, 100%);
   background: var(--panel);
   border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
   padding: 1.25rem;
   overflow-y: auto;
   z-index: 1000;

@@ -13,6 +13,7 @@ const statusBanner = document.getElementById("statusBanner");
 const alertFlash = document.getElementById("alertFlash");
 const headBar = document.getElementById("headBar");
 const shoulderBar = document.getElementById("shoulderBar");
+const fabricBar = document.getElementById("fabricBar");
 const pauseToggle = document.getElementById("pauseToggle");
 const pausedOverlay = document.getElementById("pausedOverlay");
 
@@ -23,8 +24,12 @@ const dbgHeadBad = document.getElementById("dbgHeadBad");
 const dbgShoulderRaw = document.getElementById("dbgShoulderRaw");
 const dbgShoulderGood = document.getElementById("dbgShoulderGood");
 const dbgShoulderBad = document.getElementById("dbgShoulderBad");
+const dbgFabricRaw = document.getElementById("dbgFabricRaw");
+const dbgFabricGood = document.getElementById("dbgFabricGood");
+const dbgFabricBad = document.getElementById("dbgFabricBad");
 const dbgHeadScore = document.getElementById("dbgHeadScore");
 const dbgShoulderScore = document.getElementById("dbgShoulderScore");
+const dbgFabricScore = document.getElementById("dbgFabricScore");
 const dbgThresholds = document.getElementById("dbgThresholds");
 
 const chartCanvas = document.getElementById("historyChart");
@@ -40,8 +45,12 @@ const calibrateBadStatus = document.getElementById("calibrateBadStatus");
 const calibrateMsg = document.getElementById("calibrateMsg");
 const headSensitivityInput = document.getElementById("headSensitivity");
 const shoulderSensitivityInput = document.getElementById("shoulderSensitivity");
+const shoulderAlertToggle = document.getElementById("shoulderAlertToggle");
+const fabricSensitivityInput = document.getElementById("fabricSensitivity");
+const fabricAlertToggle = document.getElementById("fabricAlertToggle");
 const headSensVal = document.getElementById("headSensVal");
 const shoulderSensVal = document.getElementById("shoulderSensVal");
+const fabricSensVal = document.getElementById("fabricSensVal");
 const soundToggle = document.getElementById("soundToggle");
 const volumeInput = document.getElementById("volume");
 const visualToggle = document.getElementById("visualToggle");
@@ -72,6 +81,9 @@ const CALIBRATION_KEY = "postureWatch.calibration.v4";
 const defaultSettings = {
   headSensitivity: 40,
   shoulderSensitivity: 40,
+  shoulderAlertEnabled: true,
+  fabricSensitivity: 40,
+  fabricAlertEnabled: true,
   sound: true,
   volume: 60,
   visual: true,
@@ -111,6 +123,10 @@ function applySettingsToUI() {
   headSensVal.textContent = settings.headSensitivity;
   shoulderSensitivityInput.value = settings.shoulderSensitivity;
   shoulderSensVal.textContent = settings.shoulderSensitivity;
+  shoulderAlertToggle.checked = settings.shoulderAlertEnabled;
+  fabricSensitivityInput.value = settings.fabricSensitivity;
+  fabricSensVal.textContent = settings.fabricSensitivity;
+  fabricAlertToggle.checked = settings.fabricAlertEnabled;
   soundToggle.checked = settings.sound;
   volumeInput.value = settings.volume;
   visualToggle.checked = settings.visual;
@@ -153,6 +169,19 @@ headSensitivityInput.addEventListener("input", () => {
 shoulderSensitivityInput.addEventListener("input", () => {
   settings.shoulderSensitivity = Number(shoulderSensitivityInput.value);
   shoulderSensVal.textContent = settings.shoulderSensitivity;
+  saveSettings();
+});
+shoulderAlertToggle.addEventListener("change", () => {
+  settings.shoulderAlertEnabled = shoulderAlertToggle.checked;
+  saveSettings();
+});
+fabricSensitivityInput.addEventListener("input", () => {
+  settings.fabricSensitivity = Number(fabricSensitivityInput.value);
+  fabricSensVal.textContent = settings.fabricSensitivity;
+  saveSettings();
+});
+fabricAlertToggle.addEventListener("change", () => {
+  settings.fabricAlertEnabled = fabricAlertToggle.checked;
   saveSettings();
 });
 soundToggle.addEventListener("change", () => {
@@ -339,6 +368,78 @@ function computeMetrics(landmarks) {
   };
 }
 
+// ---------- Fabric texture metric ----------
+// Proxy for shoulder/neck fabric wrinkling: average Sobel edge magnitude
+// over a shoulder-neck ROI. Rounded/forward shoulders bunch slack fabric
+// into creases (higher edge density); squared, upright shoulders keep it
+// relatively taut and flat (lower edge density). Only gates alerts once the
+// good/bad calibration samples actually differ by more than noise-floor
+// amounts — see FABRIC_MIN_RANGE in evaluatePosture.
+const fabricCanvas = document.createElement("canvas");
+const fabricCtx = fabricCanvas.getContext("2d", { willReadFrequently: true });
+const FABRIC_SAMPLE_W = 96;
+
+function computeFabricRoi(landmarks) {
+  const lSh = landmarks[LEFT_SHOULDER];
+  const rSh = landmarks[RIGHT_SHOULDER];
+  const lEar = landmarks[LEFT_EAR];
+  const rEar = landmarks[RIGHT_EAR];
+  const shoulderWidth = dist(lSh, rSh) || 0.0001;
+
+  const top = Math.min(lEar.y, rEar.y);
+  const bottom = Math.max(lSh.y, rSh.y) + shoulderWidth * 0.35;
+  const left = Math.min(lSh.x, rSh.x) - shoulderWidth * 0.15;
+  const right = Math.max(lSh.x, rSh.x) + shoulderWidth * 0.15;
+
+  const x = clamp01(left);
+  const y = clamp01(top);
+  return { x, y, w: clamp01(right) - x, h: clamp01(bottom) - y };
+}
+
+// Average Sobel gradient magnitude over the ROI, sampled from the raw
+// (unmirrored) video frame — same coordinate space the landmarks use.
+// Downscaled to FABRIC_SAMPLE_W first since we only need a coarse texture
+// estimate and this runs every animation frame.
+function computeEdgeDensity(roiNorm) {
+  if (!roiNorm || roiNorm.w <= 0 || roiNorm.h <= 0) return null;
+  const sx = roiNorm.x * video.videoWidth;
+  const sy = roiNorm.y * video.videoHeight;
+  const sw = roiNorm.w * video.videoWidth;
+  const sh = roiNorm.h * video.videoHeight;
+  if (sw < 4 || sh < 4) return null;
+
+  const dw = FABRIC_SAMPLE_W;
+  const dh = Math.max(4, Math.round(dw * (sh / sw)));
+  fabricCanvas.width = dw;
+  fabricCanvas.height = dh;
+  fabricCtx.drawImage(video, sx, sy, sw, sh, 0, 0, dw, dh);
+
+  const { data } = fabricCtx.getImageData(0, 0, dw, dh);
+  const gray = new Float32Array(dw * dh);
+  for (let i = 0; i < dw * dh; i++) {
+    const o = i * 4;
+    gray[i] = 0.299 * data[o] + 0.587 * data[o + 1] + 0.114 * data[o + 2];
+  }
+
+  let sum = 0;
+  let count = 0;
+  for (let y = 1; y < dh - 1; y++) {
+    for (let x = 1; x < dw - 1; x++) {
+      const i = y * dw + x;
+      const gx =
+        gray[i - dw - 1] - gray[i - dw + 1] +
+        2 * gray[i - 1] - 2 * gray[i + 1] +
+        gray[i + dw - 1] - gray[i + dw + 1];
+      const gy =
+        gray[i - dw - 1] + 2 * gray[i - dw] + gray[i - dw + 1] -
+        (gray[i + dw - 1] + 2 * gray[i + dw] + gray[i + dw + 1]);
+      sum += Math.sqrt(gx * gx + gy * gy);
+      count++;
+    }
+  }
+  return count ? sum / count / 255 : null;
+}
+
 // Exponential smoothing of live metrics to reduce jitter
 let smoothed = null;
 const SMOOTHING = 0.35;
@@ -348,6 +449,10 @@ function smoothMetrics(m) {
   } else {
     smoothed.head += (m.head - smoothed.head) * SMOOTHING;
     smoothed.shoulder += (m.shoulder - smoothed.shoulder) * SMOOTHING;
+    if (m.fabric != null) {
+      smoothed.fabric =
+        smoothed.fabric == null ? m.fabric : smoothed.fabric + (m.fabric - smoothed.fabric) * SMOOTHING;
+    }
   }
   return smoothed;
 }
@@ -388,9 +493,13 @@ async function runCalibration(kind) {
     calibrateMsg.textContent = "Couldn't see you clearly — try again with better lighting.";
   } else {
     const avg = (key) => samples.reduce((sum, s) => sum + s[key], 0) / samples.length;
+    const fabricSamples = samples.filter((s) => s.fabric != null);
     calibration[kind] = {
       head: avg("head"),
       shoulder: avg("shoulder"),
+      fabric: fabricSamples.length
+        ? fabricSamples.reduce((sum, s) => sum + s.fabric, 0) / fabricSamples.length
+        : null,
     };
     saveCalibration();
     refreshCalibrationUI();
@@ -414,22 +523,51 @@ function scoreFromCalibration(value, goodVal, badVal) {
 
 function evaluatePosture(m) {
   if (!calibration.good || !calibration.bad) {
-    return { bad: false, headScore: 0.5, shoulderScore: 0.5, ready: false };
+    return {
+      bad: false,
+      headScore: 0.5,
+      shoulderScore: 0.5,
+      fabricScore: 0.5,
+      headBad: false,
+      shoulderBad: false,
+      fabricBad: false,
+      ready: false,
+    };
   }
 
   const headScore = scoreFromCalibration(m.head, calibration.good.head, calibration.bad.head);
   const shoulderScore = scoreFromCalibration(m.shoulder, calibration.good.shoulder, calibration.bad.shoulder);
 
+  // Fabric only gates alerts once the good/bad calibration samples actually
+  // differ by more than noise-floor amounts (FABRIC_MIN_RANGE) — otherwise
+  // scoreFromCalibration's near-zero denominator turns tiny frame-to-frame
+  // jitter into wild swings, so it falls back to a neutral, non-triggering score.
+  const FABRIC_MIN_RANGE = 0.01;
+  const fabricRange =
+    calibration.good.fabric != null && calibration.bad.fabric != null
+      ? Math.abs(calibration.good.fabric - calibration.bad.fabric)
+      : 0;
+  const haveFabricCalibration = fabricRange >= FABRIC_MIN_RANGE && m.fabric != null;
+  const fabricScore = haveFabricCalibration
+    ? scoreFromCalibration(m.fabric, calibration.good.fabric, calibration.bad.fabric)
+    : 0.5;
+
   const headThreshold = 1 - settings.headSensitivity / 100;
   const shoulderThreshold = 1 - settings.shoulderSensitivity / 100;
+  const fabricThreshold = 1 - settings.fabricSensitivity / 100;
 
-  const bad = headScore <= headThreshold || shoulderScore <= shoulderThreshold;
-  return { bad, headScore, shoulderScore, ready: true };
+  const headBad = headScore <= headThreshold;
+  const shoulderBad = settings.shoulderAlertEnabled && shoulderScore <= shoulderThreshold;
+  const fabricBad = settings.fabricAlertEnabled && haveFabricCalibration && fabricScore <= fabricThreshold;
+
+  const bad = headBad || shoulderBad || fabricBad;
+  return { bad, headScore, shoulderScore, fabricScore, headBad, shoulderBad, fabricBad, ready: true };
 }
 
-function updateBars(headScore, shoulderScore) {
+function updateBars(headScore, shoulderScore, fabricScore) {
   setBar(headBar, headScore);
   setBar(shoulderBar, shoulderScore);
+  setBar(fabricBar, fabricScore);
 }
 function setBar(el, score) {
   el.style.width = `${Math.round(clamp01(score) * 100)}%`;
@@ -481,6 +619,7 @@ function scoreClass(score, threshold) {
 function updateDebugPanel(raw, evalResult) {
   const headThreshold = 1 - settings.headSensitivity / 100;
   const shoulderThreshold = 1 - settings.shoulderSensitivity / 100;
+  const fabricThreshold = 1 - settings.fabricSensitivity / 100;
 
   dbgHeadRaw.textContent = fmt(raw && raw.head);
   dbgHeadRaw.className = raw ? scoreClass(evalResult.headScore, headThreshold) : "";
@@ -492,12 +631,19 @@ function updateDebugPanel(raw, evalResult) {
   dbgShoulderGood.textContent = fmt(calibration.good && calibration.good.shoulder);
   dbgShoulderBad.textContent = fmt(calibration.bad && calibration.bad.shoulder);
 
+  dbgFabricRaw.textContent = fmt(raw && raw.fabric);
+  dbgFabricRaw.className = raw ? scoreClass(evalResult.fabricScore, fabricThreshold) : "";
+  dbgFabricGood.textContent = fmt(calibration.good && calibration.good.fabric);
+  dbgFabricBad.textContent = fmt(calibration.bad && calibration.bad.fabric);
+
   dbgHeadScore.textContent = fmt(evalResult.headScore);
   dbgHeadScore.className = scoreClass(evalResult.headScore, headThreshold);
   dbgShoulderScore.textContent = fmt(evalResult.shoulderScore);
   dbgShoulderScore.className = scoreClass(evalResult.shoulderScore, shoulderThreshold);
+  dbgFabricScore.textContent = fmt(evalResult.fabricScore);
+  dbgFabricScore.className = scoreClass(evalResult.fabricScore, fabricThreshold);
 
-  dbgThresholds.textContent = `${fmt(headThreshold)} / ${fmt(shoulderThreshold)}`;
+  dbgThresholds.textContent = `${fmt(headThreshold)} / ${fmt(shoulderThreshold)} / ${fmt(fabricThreshold)}`;
 }
 
 // ---------- Skeleton drawing ----------
@@ -613,25 +759,37 @@ function drawSkeleton(landmarks) {
 }
 
 // ---------- History chart ----------
-const history = []; // { t, headScore, shoulderScore }
+const history = []; // { t, headScore, shoulderScore, fabricScore, headBad, shoulderBad, fabricBad }
 const HISTORY_SAMPLE_INTERVAL_MS = 100;
 let lastHistorySampleT = 0;
 
-function recordHistory(t, headScore, shoulderScore) {
+function recordHistory(t, evalResult) {
   if (t - lastHistorySampleT < HISTORY_SAMPLE_INTERVAL_MS) return false;
   lastHistorySampleT = t;
-  history.push({ t, headScore, shoulderScore });
+  history.push({
+    t,
+    headScore: evalResult.headScore,
+    shoulderScore: evalResult.shoulderScore,
+    fabricScore: evalResult.fabricScore,
+    headBad: evalResult.headBad,
+    shoulderBad: evalResult.shoulderBad,
+    fabricBad: evalResult.fabricBad,
+  });
   const cutoff = t - settings.historyWindowSec * 1000 - 2000;
   while (history.length && history[0].t < cutoff) history.shift();
   return true;
 }
 
-// Layout: line plot on top, two "bad enough to alert" indicator strips below
+// Layout: line plot on top, three "bad enough to alert" indicator strips below.
+// Strips reflect the actual per-metric gating decision recorded at the time
+// (respecting the shoulder alert toggle and fabric's calibration-gap guard),
+// not a live recomputation from the current threshold/settings.
 const CHART_PLOT_H = 128;
 const CHART_STRIP_H = 14;
 const CHART_STRIP_GAP = 6;
 const CHART_HEAD_STRIP_Y = CHART_PLOT_H + CHART_STRIP_GAP;
 const CHART_SHOULDER_STRIP_Y = CHART_HEAD_STRIP_Y + CHART_STRIP_H + 4;
+const CHART_FABRIC_STRIP_Y = CHART_SHOULDER_STRIP_Y + CHART_STRIP_H + 4;
 
 function hexToRgba(hex, alpha) {
   const n = parseInt(hex.replace("#", ""), 16);
@@ -666,18 +824,22 @@ function drawHistoryChart() {
   const haveCalibration = !!(calibration.good && calibration.bad);
   const headThreshold = 1 - settings.headSensitivity / 100;
   const shoulderThreshold = 1 - settings.shoulderSensitivity / 100;
+  const fabricThreshold = 1 - settings.fabricSensitivity / 100;
 
   if (haveCalibration) {
     drawDashedLine(yToPx(headThreshold), "#4da3ff");
-    drawDashedLine(yToPx(shoulderThreshold), "#c77dff");
+    if (settings.shoulderAlertEnabled) drawDashedLine(yToPx(shoulderThreshold), "#c77dff");
+    if (settings.fabricAlertEnabled) drawDashedLine(yToPx(fabricThreshold), "#ff9f0a");
   }
 
   drawSeries((p) => p.headScore, "#4da3ff");
   drawSeries((p) => p.shoulderScore, "#c77dff");
+  drawSeries((p) => p.fabricScore, "#ff9f0a");
 
   if (haveCalibration) {
-    drawBadStrip(CHART_HEAD_STRIP_Y, (p) => p.headScore <= headThreshold, "#4da3ff", "Head");
-    drawBadStrip(CHART_SHOULDER_STRIP_Y, (p) => p.shoulderScore <= shoulderThreshold, "#c77dff", "Shoulders");
+    drawBadStrip(CHART_HEAD_STRIP_Y, (p) => p.headBad, "#4da3ff", "Head");
+    drawBadStrip(CHART_SHOULDER_STRIP_Y, (p) => p.shoulderBad, "#c77dff", "Shoulders");
+    drawBadStrip(CHART_FABRIC_STRIP_Y, (p) => p.fabricBad, "#ff9f0a", "Fabric");
   }
 
   function drawDashedLine(py, color) {
@@ -753,15 +915,16 @@ function renderLoop() {
     if (result.landmarks && result.landmarks.length > 0) {
       const landmarks = result.landmarks[0];
       const raw = computeMetrics(landmarks);
-      let evalResult = { bad: false, headScore: 0.5, shoulderScore: 0.5, ready: false };
+      let evalResult = { bad: false, headScore: 0.5, shoulderScore: 0.5, fabricScore: 0.5, ready: false };
       if (raw) {
+        raw.fabric = computeEdgeDensity(computeFabricRoi(landmarks));
         lastMetrics = raw;
         const m = smoothMetrics(raw);
         evalResult = evaluatePosture(m);
-        updateBars(evalResult.headScore, evalResult.shoulderScore);
+        updateBars(evalResult.headScore, evalResult.shoulderScore, evalResult.fabricScore);
         handleAlertState(evalResult.bad);
         if (evalResult.ready) {
-          const sampled = recordHistory(performance.now(), evalResult.headScore, evalResult.shoulderScore);
+          const sampled = recordHistory(performance.now(), evalResult);
           if (sampled) drawHistoryChart();
         }
       }

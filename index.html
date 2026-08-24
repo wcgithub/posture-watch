@@ -42,6 +42,10 @@
         <span class="metricLabel">Shoulder position</span>
         <div class="bar"><div id="shoulderBar" class="fill"></div></div>
       </div>
+      <div class="metricRow">
+        <span class="metricLabel">Fabric texture</span>
+        <div class="bar"><div id="fabricBar" class="fill"></div></div>
+      </div>
     </div>
 
     <div id="debugPanel" class="hidden">
@@ -55,10 +59,14 @@
         <span><span id="dbgShoulderRaw">—</span> / <span id="dbgShoulderGood" class="dbgGood">—</span> / <span id="dbgShoulderBad" class="dbgBad">—</span></span>
       </div>
       <div class="debugRow">
-        <span>Head / Shoulder score</span>
-        <span><span id="dbgHeadScore">—</span> / <span id="dbgShoulderScore">—</span></span>
+        <span>Fabric metric — raw / good / bad</span>
+        <span><span id="dbgFabricRaw">—</span> / <span id="dbgFabricGood" class="dbgGood">—</span> / <span id="dbgFabricBad" class="dbgBad">—</span></span>
       </div>
-      <div class="debugRow"><span>Head / Shoulder threshold</span><span id="dbgThresholds">—</span></div>
+      <div class="debugRow">
+        <span>Head / Shoulder / Fabric score</span>
+        <span><span id="dbgHeadScore">—</span> / <span id="dbgShoulderScore">—</span> / <span id="dbgFabricScore">—</span></span>
+      </div>
+      <div class="debugRow"><span>Head / Shoulder / Fabric threshold</span><span id="dbgThresholds">—</span></div>
     </div>
 
     <div id="historyPanel">
@@ -67,10 +75,11 @@
         <div class="legend">
           <span class="legendItem"><i class="dot head"></i>Head</span>
           <span class="legendItem"><i class="dot shoulder"></i>Shoulders</span>
+          <span class="legendItem"><i class="dot fabric"></i>Fabric</span>
           <span class="legendItem"><i class="dot bad"></i>Bad</span>
         </div>
       </div>
-      <canvas id="historyChart" width="640" height="176"></canvas>
+      <canvas id="historyChart" width="640" height="194"></canvas>
     </div>
   </main>
 
@@ -95,9 +104,18 @@
       <h3>Sensitivity</h3>
       <label class="sliderLabel">Head <span id="headSensVal">40</span>%</label>
       <input type="range" id="headSensitivity" min="0" max="100" value="40" />
-      <label class="sliderLabel">Shoulders <span id="shoulderSensVal">40</span>%</label>
+      <label class="sliderLabel">
+        <span class="sliderLabelText"><input type="checkbox" id="shoulderAlertToggle" checked /> Shoulders</span>
+        <span id="shoulderSensVal">40</span>%
+      </label>
       <input type="range" id="shoulderSensitivity" min="0" max="100" value="40" />
-      <p class="hint">Lower = alerts sooner, closer to your good posture. Higher = allows more drift toward your bad posture before alerting.</p>
+      <p class="hint">Lower = alerts sooner, closer to your good posture. Higher = allows more drift toward your bad posture before alerting. Uncheck to stop shoulder position from triggering alerts if it's too sensitive — it's still tracked in the bar and chart.</p>
+      <label class="sliderLabel">
+        <span class="sliderLabelText"><input type="checkbox" id="fabricAlertToggle" checked /> Fabric texture</span>
+        <span id="fabricSensVal">40</span>%
+      </label>
+      <input type="range" id="fabricSensitivity" min="0" max="100" value="40" />
+      <p class="hint">Scores shoulder/neck fabric wrinkling as an edge-density signal. Only triggers alerts once your good/bad calibration shows a real gap — otherwise it's ignored. Uncheck to stop it from triggering alerts entirely.</p>
     </section>
 
     <section>
